@@ -443,7 +443,7 @@
         <canvas id="pageCanvasR"></canvas>
         <div class="reader-loading" id="readerLoading" style="display:none">
           <div class="spinner"></div>
-          <div>กำลังโหลดหนังสือ...</div>
+          <div id="readerLoadingText">กำลังโหลดหนังสือ...</div>
         </div>
         <div class="reader-error" id="readerError" style="display:none">
           <div style="font-size:2.2rem;opacity:.6">📄</div>
@@ -749,10 +749,36 @@ async function openBook(book) {
   dl.href = `https://drive.google.com/uc?export=download&id=${driveId}`;
   readerShow('loading');
 
+  const cacheKey = `pdfcache:${driveId}`;
   try {
-    const res = await fetch(`${API_URL}?action=getPdf&id=${driveId}`);
-    const text = await res.text();
-    if (text.startsWith('ERROR:')) throw new Error(text);
+    let text = sessionStorage.getItem(cacheKey);
+
+    if (!text) {
+      const res = await fetch(`${API_URL}?action=getPdf&id=${driveId}`);
+      const total = Number(res.headers.get('Content-Length')) || 0;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      const loadingText = document.getElementById('readerLoadingText');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (total) {
+          const pct = Math.min(99, Math.round((received / total) * 100));
+          loadingText.textContent = `กำลังโหลดหนังสือ... ${pct}%`;
+        } else {
+          loadingText.textContent = `กำลังโหลดหนังสือ... ${(received / 1024 / 1024).toFixed(1)} MB`;
+        }
+      }
+      const blob = new Blob(chunks);
+      text = await blob.text();
+      if (text.startsWith('ERROR:')) throw new Error(text);
+      try { sessionStorage.setItem(cacheKey, text); } catch (e) { /* ไฟล์ใหญ่เกินโควตา ข้ามการ cache ไป */ }
+    }
+
     const bytes = Uint8Array.from(atob(text), c => c.charCodeAt(0));
     pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
     spreadStart = 1;
