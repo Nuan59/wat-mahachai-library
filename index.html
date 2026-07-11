@@ -96,6 +96,12 @@
     transform: translateY(-50%); font-size: .85rem; pointer-events: none; opacity: .6;
   }
   .count { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+  .sort-select {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-family: 'Sarabun', sans-serif; font-size: .82rem;
+    padding: 9px 12px; outline: none; cursor: pointer;
+  }
+  .sort-select:focus { border-color: var(--gold); }
 
   .cats { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 26px; }
   .cat-btn {
@@ -156,6 +162,20 @@
     padding: 2px 7px; border-radius: 4px;
     z-index: 1;
   }
+  .fav-btn {
+    position: absolute; top: 6px; left: 6px; z-index: 2;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(0,0,0,.45); border: none; color: #ccc;
+    font-size: 1rem; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fav-btn.active { color: var(--gold); }
+  .fav-btn:hover { color: var(--gold2); }
+  .progress-badge {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 1;
+    background: rgba(0,0,0,.6); color: var(--gold2);
+    font-size: .62rem; text-align: center; padding: 4px 6px;
+  }
   .card-body { padding: 12px 13px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
   .card-title { font-size: .88rem; font-weight: 600; line-height: 1.35;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -202,6 +222,13 @@
   .modal-info { flex: 1; }
   .modal-info h2 { font-size: 1.02rem; color: var(--gold2); font-weight: 700; }
   .modal-info p { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+  .fav-toggle-btn {
+    background: transparent; border: 1px solid var(--border); border-radius: 20px;
+    color: var(--muted); font-size: .78rem; padding: 8px 14px; cursor: pointer;
+    font-family: 'Sarabun', sans-serif; white-space: nowrap; margin-right: 8px;
+  }
+  .fav-toggle-btn:hover { border-color: var(--gold); color: var(--gold2); }
+  .fav-toggle-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(212,175,55,.1); }
   .modal-close {
     background: transparent; border: 1px solid var(--border); border-radius: 6px;
     color: var(--muted); font-size: 1.1rem; cursor: pointer; padding: 8px 14px;
@@ -385,6 +412,8 @@
   @media (max-width: 480px) {
     .field-row { grid-template-columns: 1fr; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 13px; }
+    .fav-toggle-btn { font-size: 0; padding: 8px 10px; }
+    .fav-toggle-btn::before { content: '★'; font-size: 1rem; }
   }
   @media (max-height: 480px) {
     .modal { max-height: 98vh; }
@@ -410,6 +439,11 @@
       <div class="search-wrap">
         <input id="searchInput" type="text" placeholder="ค้นหาชื่อหนังสือ หรือผู้แต่ง…" oninput="renderGrid()">
       </div>
+      <select id="sortSelect" class="sort-select" onchange="renderGrid()">
+        <option value="newest">ล่าสุด</option>
+        <option value="title">ชื่อ ก-ฮ</option>
+        <option value="popular">ยอดนิยม</option>
+      </select>
       <span class="count" id="countLabel"></span>
     </div>
 
@@ -418,7 +452,7 @@
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty">
       <div class="e-icon">📭</div>
-      ยังไม่มีหนังสือในหมวดนี้ — ลองดูหมวดอื่น หรือเพิ่มหนังสือเล่มแรกได้จากเมนูจัดการด้านล่าง
+      <span id="emptyText">ยังไม่มีหนังสือในหมวดนี้ — ลองดูหมวดอื่น หรือเพิ่มหนังสือเล่มแรกได้จากเมนูจัดการด้านล่าง</span>
     </div>
 
     <div class="footer-link">
@@ -435,6 +469,7 @@
         <h2 id="modalTitle"></h2>
         <p id="modalAuthor"></p>
       </div>
+      <button class="fav-toggle-btn" id="modalFavBtn">☆ เพิ่มในรายการโปรด</button>
       <button class="modal-close" onclick="closeOverlay()">✕</button>
     </div>
     <div class="pdf-body" id="pdfBody">
@@ -458,6 +493,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn outline" onclick="closeOverlay()">ปิด</button>
+      <button class="btn outline" onclick="shareCurrentBook()">🔗 แชร์</button>
       <a class="btn" id="modalDownload" href="#" target="_blank">⬇ ดาวน์โหลด</a>
     </div>
   </div>
@@ -613,6 +649,10 @@ async function loadData() {
     </div>`;
   } else {
     renderGrid();
+    if (!window.__deepLinkChecked) {
+      window.__deepLinkChecked = true;
+      openBookFromUrlIfPresent();
+    }
   }
   if (document.getElementById('adminPanel').style.display === 'block') {
     populateCatSelect('f-cat');
@@ -632,7 +672,33 @@ async function apiPost(payload) {
   }
 }
 
-function getCategories() { return ['ทั้งหมด', ...CATEGORIES]; }
+function getCategories() { return ['ทั้งหมด', 'รายการโปรด', ...CATEGORIES]; }
+
+/* ── รายการโปรด (เก็บในเครื่อง) ── */
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem('wml_favorites') || '[]'); }
+  catch (e) { return []; }
+}
+function isFavorite(id) { return getFavorites().includes(id); }
+function toggleFavorite(id, e) {
+  if (e) e.stopPropagation();
+  let favs = getFavorites();
+  favs = favs.includes(id) ? favs.filter(f => f !== id) : [...favs, id];
+  localStorage.setItem('wml_favorites', JSON.stringify(favs));
+  renderGrid();
+}
+
+/* ── อ่านต่อจากหน้าเดิม (เก็บในเครื่อง) ── */
+function getProgressMap() {
+  try { return JSON.parse(localStorage.getItem('wml_progress') || '{}'); }
+  catch (e) { return {}; }
+}
+function getProgress(id) { return getProgressMap()[id] || null; }
+function saveProgress(id, page) {
+  const map = getProgressMap();
+  map[id] = page;
+  localStorage.setItem('wml_progress', JSON.stringify(map));
+}
 
 function buildCats() {
   const el = document.getElementById('catList');
@@ -648,19 +714,35 @@ function buildCats() {
 
 function renderGrid() {
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const sortBy = document.getElementById('sortSelect') ? document.getElementById('sortSelect').value : 'newest';
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
   grid.innerHTML = '';
 
-  const filtered = BOOKS.filter(b => {
-    const matchCat = activeCat === 'ทั้งหมด' || b.category === activeCat;
+  let filtered = BOOKS.filter(b => {
+    const matchCat = activeCat === 'ทั้งหมด'
+      || (activeCat === 'รายการโปรด' ? isFavorite(b.id) : b.category === activeCat);
     const matchQ = !q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q);
     return matchCat && matchQ;
   });
 
+  if (sortBy === 'title') {
+    filtered = filtered.slice().sort((a, b) => a.title.localeCompare(b.title, 'th'));
+  } else if (sortBy === 'popular') {
+    filtered = filtered.slice().sort((a, b) => (Number(b.views) || 0) - (Number(a.views) || 0));
+  } else {
+    filtered = filtered.slice().reverse(); // newest = ลำดับล่าสุดที่เพิ่มในชีท
+  }
+
   document.getElementById('countLabel').textContent = `${filtered.length} เล่ม`;
 
-  if (filtered.length === 0) { empty.classList.add('show'); return; }
+  if (filtered.length === 0) {
+    empty.classList.add('show');
+    document.getElementById('emptyText').textContent = activeCat === 'รายการโปรด'
+      ? 'ยังไม่มีหนังสือในรายการโปรด — กดไอคอนดาว ⭐ บนปกหนังสือเพื่อเก็บไว้'
+      : 'ยังไม่มีหนังสือในหมวดนี้ — ลองดูหมวดอื่น หรือเพิ่มหนังสือเล่มแรกได้จากเมนูจัดการด้านล่าง';
+    return;
+  }
   empty.classList.remove('show');
 
   filtered.forEach((book) => {
@@ -671,15 +753,19 @@ function renderGrid() {
     const coverHtml = driveId
       ? `<img src="https://drive.google.com/thumbnail?id=${driveId}&sz=w400-h533" alt="${book.title}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'no-cover-icon',textContent:'📖'}))">`
       : `<div class="no-cover-icon">📖</div>`;
+    const progress = getProgress(book.id);
+    const fav = isFavorite(book.id);
     card.innerHTML = `
       <div class="cover">
         ${book.badge ? `<span class="badge">${book.badge}</span>` : ''}
+        <button class="fav-btn ${fav ? 'active' : ''}" onclick="toggleFavorite('${book.id}', event)" title="เก็บในรายการโปรด">${fav ? '★' : '☆'}</button>
         ${coverHtml}
+        ${progress ? `<span class="progress-badge">อ่านต่อ หน้า ${progress}</span>` : ''}
       </div>
       <div class="card-body">
         <div class="card-title">${book.title}</div>
         <div class="card-author">${book.author}</div>
-        <div class="card-cat">${book.category}</div>
+        <div class="card-cat">${book.category}${book.views ? ` · 👁 ${book.views}` : ''}</div>
       </div>`;
     grid.appendChild(card);
   });
@@ -703,6 +789,7 @@ if (window.pdfjsLib) {
 
 let pdfDoc = null;
 let spreadStart = 1;
+let currentBookId = null;
 let isMobileReader = window.matchMedia('(max-width: 760px)').matches;
 window.addEventListener('resize', () => {
   const nowMobile = window.matchMedia('(max-width: 760px)').matches;
@@ -721,12 +808,27 @@ function readerShow(state) {
   document.getElementById('readerNav').style.display = state === 'reading' ? 'flex' : 'none';
 }
 
-async function openBook(book) {
+async function openBook(book, opts) {
+  opts = opts || {};
   document.getElementById('modalTitle').textContent = book.title;
   document.getElementById('modalAuthor').textContent = book.author;
   const dl = document.getElementById('modalDownload');
   document.getElementById('overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  currentBookId = book.id;
+
+  // อัปเดต URL ให้แชร์ลิงก์เฉพาะเล่มนี้ได้ (ไม่รีโหลดหน้า)
+  const shareUrl = new URL(window.location.href);
+  shareUrl.searchParams.set('book', book.id);
+  history.replaceState(null, '', shareUrl.toString());
+
+  const favBtn = document.getElementById('modalFavBtn');
+  if (favBtn) {
+    const fav = isFavorite(book.id);
+    favBtn.textContent = fav ? '★ อยู่ในรายการโปรด' : '☆ เพิ่มในรายการโปรด';
+    favBtn.classList.toggle('active', fav);
+    favBtn.onclick = () => { toggleFavorite(book.id); const f2 = isFavorite(book.id); favBtn.textContent = f2 ? '★ อยู่ในรายการโปรด' : '☆ เพิ่มในรายการโปรด'; favBtn.classList.toggle('active', f2); };
+  }
 
   const driveId = extractDriveId(book.link);
   pdfDoc = null;
@@ -748,6 +850,11 @@ async function openBook(book) {
   dl.style.display = 'inline-flex';
   dl.href = `https://drive.google.com/uc?export=download&id=${driveId}`;
   readerShow('loading');
+
+  // นับยอดเข้าชม (ยิงแบบ fire-and-forget ไม่ต้องรอ ไม่กระทบความเร็วโหลด)
+  if (!opts.skipView) {
+    apiPost({ action: 'incrementView', id: book.id }).catch(() => {});
+  }
 
   const cacheKey = `pdfcache:${driveId}`;
   try {
@@ -781,7 +888,10 @@ async function openBook(book) {
 
     const bytes = Uint8Array.from(atob(text), c => c.charCodeAt(0));
     pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
-    spreadStart = 1;
+
+    const saved = getProgress(book.id);
+    spreadStart = (saved && saved >= 1 && saved <= pdfDoc.numPages) ? saved : 1;
+
     readerShow('reading');
     renderSpread();
   } catch (err) {
@@ -828,6 +938,8 @@ async function renderSpread() {
   const step = isMobileReader ? 1 : 2;
   document.getElementById('prevBtn').disabled = spreadStart <= 1;
   document.getElementById('nextBtn').disabled = spreadStart + step > pdfDoc.numPages;
+
+  if (currentBookId) saveProgress(currentBookId, spreadStart);
 }
 
 function turnPage(delta) {
@@ -855,6 +967,10 @@ function closeOverlay() {
   document.getElementById('overlay').classList.remove('open');
   document.body.style.overflow = '';
   pdfDoc = null;
+  currentBookId = null;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('book');
+  history.replaceState(null, '', url.toString());
 }
 function closeModal(e) { if (e.target.id === 'overlay') closeOverlay(); }
 document.addEventListener('keydown', e => {
@@ -864,6 +980,32 @@ document.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') turnPage(1);
   }
 });
+
+async function shareCurrentBook() {
+  const url = window.location.href;
+  const title = document.getElementById('modalTitle').textContent;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url });
+      return;
+    }
+  } catch (e) { /* ผู้ใช้กดยกเลิก แชร์ ไม่ต้องแจ้งเตือน */ return; }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('คัดลอกลิงก์แล้ว 📋');
+  } catch (e) {
+    showToast('คัดลอกลิงก์ไม่สำเร็จ ลองก็อปจากแถบที่อยู่แทน');
+  }
+}
+
+/* ── เปิดหนังสือตรงจากลิงก์ที่แชร์มา (?book=ID) ── */
+function openBookFromUrlIfPresent() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('book');
+  if (!id) return;
+  const book = BOOKS.find(b => b.id === id);
+  if (book) openBook(book, { skipView: false });
+}
 
 /* ══════════════ VIEW SWITCHING ══════════════ */
 function goAdmin() {
